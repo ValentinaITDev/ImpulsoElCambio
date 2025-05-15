@@ -1,16 +1,16 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mis Proyectos - Voluntario</title>
-    <link rel="stylesheet" href="/ProyectoUsuario.css">
+    <link rel="stylesheet" th:href="@{/ProyectoUsuario.css}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
     <nav class="navbar">
         <div class="logo">
-            <img src="/images/logo.png" alt="Boomerang Voluntariado" class="logo-img">
+            <img th:src="@{/images/logo.png}" alt="Boomerang Voluntariado" class="logo-img">
         </div>
         <ul class="nav-links">
             <li><a th:href="@{/dashboard}"><i class="fas fa-tachometer-alt"></i>Dashboard</a></li>
@@ -20,6 +20,9 @@
             <li><a th:href="@{/logout}"><i class="fas fa-sign-out-alt"></i>Cerrar Sesión</a></li>
         </ul>
     </nav>
+    <button class="menu-toggle" id="menuToggle">
+        <i class="fas fa-bars"></i>
+    </button>
     <div class="projects-user-container">
         <header class="projects-header">
             <h1><i class="fas fa-project-diagram"></i> Proyectos Disponibles</h1>
@@ -529,7 +532,6 @@
              projectsGrid.innerHTML = '<p>Cargando proyectos...</p>';
              try {
                  // 1. Obtener datos del usuario actual (para saber en cuáles participa)
-                 // *** ¡¡¡ ESTE ENDPOINT (/api/usuarios/me) DEBE EXISTIR EN EL BACKEND !!! ***
                  const userResponse = await fetch(API_USUARIO_URL);
                  if (!userResponse.ok) {
                       if (userResponse.status === 401 || userResponse.status === 403) {
@@ -547,22 +549,18 @@
                  // Asegurarse que tengamos la información correcta de los proyectos en los que participa
                  currentUserProjects = [];
                  
-                 // Intentar obtener de proyectosParticipados (si son objetos)
-                 if (userData.proyectosParticipados && Array.isArray(userData.proyectosParticipados)) {
+                 // Usar proyectosParticipadosIds si existe
+                 if (userData.proyectosParticipadosIds && Array.isArray(userData.proyectosParticipadosIds)) {
+                     currentUserProjects = userData.proyectosParticipadosIds;
+                 }
+                 // Compatibilidad con versiones anteriores que usaban proyectosParticipados
+                 else if (userData.proyectosParticipados && Array.isArray(userData.proyectosParticipados)) {
                      if (userData.proyectosParticipados.length > 0 && typeof userData.proyectosParticipados[0] === 'object') {
                          currentUserProjects = userData.proyectosParticipados.map(p => p.proyectoId || p.id || '');
                      } else {
                          currentUserProjects = userData.proyectosParticipados;
                      }
                  }
-                 
-                 // Alternativamente, usar proyectosParticipadosIds si existe
-                 if (userData.proyectosParticipadosIds && Array.isArray(userData.proyectosParticipadosIds)) {
-                     currentUserProjects = userData.proyectosParticipadosIds;
-                 }
-                 
-                 // También podemos obtener la lista completa de proyectos y verificar en el servidor 
-                 // cuáles tienen al usuario como participante
                  
                  // 2. Obtener todos los proyectos
                  const projectsResponse = await fetch(API_PROYECTOS_URL);
@@ -585,67 +583,12 @@
                      allProjects = [];
                  }
                  
-                 // 3. Para cada proyecto, verificar si el usuario es participante (enfoque adicional)
-                 const verificationPromises = allProjects.map(async project => {
-                     try {
-                         // Primer intento: usar endpoint específico para verificar participación
-                         const checkResponse = await fetch(`${API_PROYECTOS_URL}/${project.id}/verificar-participacion`, {
-                             method: 'GET'
-                         });
-                         
-                         if (checkResponse.ok) {
-                             const result = await checkResponse.json();
-                             if (result.esParticipante && !currentUserProjects.includes(project.id)) {
-                                 currentUserProjects.push(project.id);
-                             }
-                         } else if (checkResponse.status === 404) {
-                             // Si no existe el endpoint, usar un enfoque alternativo
-                             console.log(`Endpoint verificar-participacion no existe, usando método alternativo para proyecto ${project.id}`);
-                             
-                             // Segunda alternativa: verificar si soy participante basado en la lista de participantes
-                             try {
-                                 const participantsResponse = await fetch(`${API_PROYECTOS_URL}/${project.id}/participantes`);
-                                 if (participantsResponse.ok) {
-                                     const participantsData = await participantsResponse.json();
-                                     
-                                     // Determinar si la respuesta es un objeto paginado o un array directo
-                                     let participants;
-                                     if (participantsData && Array.isArray(participantsData)) {
-                                         participants = participantsData;
-                                     } else if (participantsData && typeof participantsData === 'object' && Array.isArray(participantsData.content)) {
-                                         participants = participantsData.content;
-                                     } else {
-                                         console.warn('Formato de respuesta inesperado para participantes:', participantsData);
-                                         participants = [];
-                                     }
-                                     
-                                     // Necesitamos el ID del usuario actual para comparar
-                                     const esParticipante = participants.some(p => 
-                                         p.id === userData.id || 
-                                         p.usuarioId === userData.id);
-                                     
-                                     if (esParticipante && !currentUserProjects.includes(project.id)) {
-                                         currentUserProjects.push(project.id);
-                                     }
-                                 }
-                             } catch (participantsErr) {
-                                 console.warn(`No se pudo verificar participantes del proyecto ${project.id}: ${participantsErr.message}`);
-                             }
-                         }
-                     } catch (err) {
-                         console.warn(`No se pudo verificar participación en proyecto ${project.id}: ${err.message}`);
-                     }
-                     return project;
-                 });
-                 
-                 // Esperar a que se completen todas las verificaciones
-                 await Promise.all(verificationPromises);
+                 // 3. Para cada proyecto, verificar si el usuario es participante
+                 console.log('Proyectos en los que participo antes de verificación:', currentUserProjects);
                  
                  // Guardar en localStorage la lista actualizada
                  saveUserProjectsToLocalStorage();
                  
-                 console.log('Proyectos en los que participo después de verificación:', currentUserProjects);
-
                  // 4. Renderizar
                  renderAllProjects(allProjects);
 
@@ -939,32 +882,91 @@
                 actionButton.disabled = true;
                 actionButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Procesando...';
                 
-                const response = await fetch(`${API_DESAFIOS_URL}/${challengeId}/completar`, {
+                // Verificar primero la autenticación
+                try {
+                    const authResponse = await fetch('/api/usuarios/me', {
+                        method: 'GET',
+                        credentials: 'include',
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'Accept': 'application/json',
+                            'Cache-Control': 'no-cache, no-store'
+                        }
+                    });
+                    
+                    if (!authResponse.ok) {
+                        throw new Error('Tu sesión ha expirado. Por favor, recarga la página e inicia sesión nuevamente.');
+                    }
+                } catch (authError) {
+                    console.error('Error de autenticación:', authError);
+                    showNotification('Tu sesión ha expirado. Por favor, recarga la página e inicia sesión nuevamente.', 'error');
+                    
+                    // Opcional: redirigir al login después de mostrar la notificación
+                    setTimeout(() => {
+                        window.location.href = '/login?redirectTo=' + encodeURIComponent(window.location.pathname);
+                    }, 2000);
+                    
+                    // Restaurar el botón
+                    actionButton.disabled = false;
+                    actionButton.innerHTML = originalButtonHtml;
+                    return;
+                }
+                
+                // Ejecutar la petición para completar el desafío
+                const response = await fetch(`/api/desafios/${challengeId}/completar`, {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json'
-                    }
+                        'Content-Type': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Accept': 'application/json'
+                    },
+                    credentials: 'include',
+                    cache: 'no-cache'
                 });
                 
                 // Restaurar el botón
                 actionButton.disabled = false;
                 actionButton.innerHTML = originalButtonHtml;
                 
+                // Procesar la respuesta
                 if (!response.ok) {
-                    const errorText = await response.text();
-                    console.error('Error response:', errorText);
-                    let errorMessage;
-                    try {
-                        const errorData = JSON.parse(errorText);
-                        errorMessage = errorData.message || errorData.error || `Error ${response.status}`;
-                    } catch (e) {
-                        errorMessage = errorText || `Error ${response.status}`;
+                    // Manejar errores
+                    const contentType = response.headers.get('content-type');
+                    let errorMessage = `Error ${response.status}`;
+                    
+                    if (contentType && contentType.includes('application/json')) {
+                        const errorData = await response.json();
+                        errorMessage = errorData.error || errorData.mensaje || errorData.message || errorMessage;
+                    } else {
+                        const errorText = await response.text();
+                        
+                        if (errorText.includes('<!DOCTYPE') || errorText.includes('<html')) {
+                            errorMessage = 'Tu sesión ha expirado. Por favor, recarga la página e inicia sesión nuevamente.';
+                            
+                            // Redirigir al login después de mostrar la notificación
+                            setTimeout(() => {
+                                window.location.href = '/login?redirectTo=' + encodeURIComponent(window.location.pathname);
+                            }, 2000);
+                        } else {
+                            errorMessage = errorText || errorMessage;
+                        }
                     }
+                    
                     throw new Error(errorMessage);
                 }
                 
-                const result = await response.json();
-                alert(result.mensaje || '¡Desafío completado con éxito!');
+                // Manejar respuesta exitosa
+                let result;
+                const contentType = response.headers.get('content-type');
+                
+                if (contentType && contentType.includes('application/json')) {
+                    result = await response.json();
+                } else {
+                    result = { mensaje: await response.text() };
+                }
+                
+                // Mostrar mensaje de éxito
+                showNotification(result.mensaje || '¡Desafío completado con éxito!', 'success');
                 
                 // Actualizar la tarjeta antes de recargar
                 card.classList.remove('active');
@@ -974,10 +976,9 @@
                 
                 // Recargar después de un momento
                 setTimeout(() => loadChallenges(), 1000);
-                
             } catch (error) {
                 console.error('Error al completar el desafío:', error);
-                alert(`No se pudo completar el desafío: ${error.message}`);
+                showNotification(`No se pudo completar el desafío: ${error.message}`, 'error');
             }
         }
 
@@ -1421,52 +1422,211 @@
             challengesGrid.innerHTML = '<p>Buscando...</p>';
             
             try {
-                // En lugar de hacer una nueva petición, filtramos localmente
-                // Esto asume que ya has cargado todos los desafíos
-                const desafiosResponse = await fetch(API_DESAFIOS_URL);
-                if (!desafiosResponse.ok) {
-                    throw new Error(`Error ${desafiosResponse.status} obteniendo desafíos`);
-                }
-                const responseData = await desafiosResponse.json();
+                // Intentar cargar los desafíos utilizando varios métodos
+                let desafios = [];
+                let loadSuccess = false;
                 
-                // Determinar si la respuesta es un objeto paginado o un array directo
-                let desafios;
-                if (responseData && Array.isArray(responseData)) {
-                    // Es un array directo
-                    desafios = responseData;
-                } else if (responseData && typeof responseData === 'object' && Array.isArray(responseData.content)) {
-                    // Es un objeto paginado con propiedad 'content'
-                    desafios = responseData.content;
-                } else {
-                    // Si no es ninguno de los anteriores, manejar como array vacío
-                    console.warn('Formato de respuesta inesperado:', responseData);
-                    desafios = [];
+                // Método 1: Intentar usar los desafíos ya cargados en memoria (si existen)
+                if (window.challengesData && Array.isArray(window.challengesData) && window.challengesData.length > 0) {
+                    console.log("Usando datos de desafíos ya cargados en memoria");
+                    desafios = window.challengesData;
+                    loadSuccess = true;
+                } 
+                
+                // Método 2: Si no hay datos en memoria, intentar obtenerlos del servidor
+                if (!loadSuccess) {
+                    try {
+                        console.log("Intentando cargar desafíos desde el servidor...");
+                        
+                        // Primero verificar que la sesión esté activa con una petición ligera
+                        const sessionCheckResponse = await fetch('/api/usuarios/me', {
+                            method: 'HEAD',
+                            headers: {
+                                'X-Requested-With': 'XMLHttpRequest'
+                            },
+                            credentials: 'include'
+                        });
+                        
+                        // Si la verificación de sesión falla, no continuar con la carga principal
+                        if (!sessionCheckResponse.ok) {
+                            if (sessionCheckResponse.status === 401 || sessionCheckResponse.status === 403) {
+                                throw new Error('Tu sesión ha expirado. Por favor, recarga la página e inicia sesión nuevamente.');
+                            }
+                        }
+                        
+                        // Intentar cargar desde el endpoint de desafíos paginados
+                        const desafiosResponse = await fetch(`${API_DESAFIOS_URL}/paginados`, {
+                            headers: {
+                                'X-Requested-With': 'XMLHttpRequest',
+                                'Accept': 'application/json'
+                            },
+                            credentials: 'include'
+                        });
+                        
+                        // Si la respuesta no es exitosa, verificar el tipo de error
+                        if (!desafiosResponse.ok) {
+                            const contentType = desafiosResponse.headers.get('content-type');
+                            
+                            // Si es HTML (probable redirección a login), intentar leer como texto
+                            if (contentType && contentType.includes('text/html')) {
+                                const htmlText = await desafiosResponse.text();
+                                if (htmlText.includes('login') || htmlText.includes('iniciar sesión')) {
+                                    throw new Error('Tu sesión ha expirado. Por favor, recarga la página e inicia sesión nuevamente.');
+                                }
+                            }
+                            
+                            // Si llega aquí, es otro tipo de error
+                            throw new Error(`Error ${desafiosResponse.status}: ${desafiosResponse.statusText}`);
+                        }
+                        
+                        // Verificar que la respuesta sea JSON
+                        const contentType = desafiosResponse.headers.get('content-type');
+                        if (!contentType || !contentType.includes('application/json')) {
+                            const textoRespuesta = await desafiosResponse.text();
+                            console.warn("Respuesta no JSON recibida:", textoRespuesta.substring(0, 100) + "...");
+                            throw new Error('El servidor no respondió con formato JSON válido');
+                        }
+                        
+                        // Procesar la respuesta JSON
+                        const responseData = await desafiosResponse.json();
+                        console.log("Datos de desafíos recibidos correctamente");
+                        
+                        // Extraer desafíos según estructura
+                        if (responseData && Array.isArray(responseData)) {
+                            desafios = responseData;
+                        } else if (responseData && typeof responseData === 'object' && Array.isArray(responseData.content)) {
+                            desafios = responseData.content;
+                        } else {
+                            console.warn('Formato de respuesta inesperado:', responseData);
+                        }
+                        
+                        // Guardar en variable global para futuros usos
+                        window.challengesData = desafios;
+                        loadSuccess = true;
+                    } catch (loadError) {
+                        console.warn("Error en método 2 (carga directa):", loadError);
+                        
+                        // Solo propagar errores de sesión expirada
+                        if (loadError.message.includes('sesión ha expirado')) {
+                            throw loadError;
+                        }
+                        // Para otros errores, intentar con método alternativo
+                    }
                 }
                 
-                // Filtrar si hay consulta
-                if (query) {
-                    desafios = desafios.filter(d => 
-                        d.nombre.toLowerCase().includes(query.toLowerCase()) || 
-                        (d.descripcion && d.descripcion.toLowerCase().includes(query.toLowerCase()))
+                // Método 3: Último intento - utilizar endpoint público
+                if (!loadSuccess) {
+                    try {
+                        console.log("Intentando método alternativo (endpoint público)...");
+                        const publicEndpoint = `${API_DESAFIOS_URL}/activos`;
+                        
+                        const publicResponse = await fetch(publicEndpoint, {
+                            headers: {
+                                'Accept': 'application/json'
+                            }
+                        });
+                        
+                        if (publicResponse.ok) {
+                            const contentType = publicResponse.headers.get('content-type');
+                            if (contentType && contentType.includes('application/json')) {
+                                const publicData = await publicResponse.json();
+                                
+                                if (Array.isArray(publicData)) {
+                                    desafios = publicData;
+                                } else if (publicData && typeof publicData === 'object' && Array.isArray(publicData.content)) {
+                                    desafios = publicData.content;
+                                }
+                                
+                                if (desafios.length > 0) {
+                                    console.log("Datos obtenidos desde endpoint público");
+                                    loadSuccess = true;
+                                }
+                            }
+                        }
+                    } catch (publicError) {
+                        console.warn("Error en método alternativo:", publicError);
+                        // Continuar con cualquier dato que tengamos hasta ahora
+                    }
+                }
+                
+                // Si después de todos los intentos no hay datos, mostrar mensaje
+                if (!loadSuccess && desafios.length === 0) {
+                    challengesGrid.innerHTML = `
+                        <div style="text-align: center; padding: 20px;">
+                            <p>No se pudieron cargar los desafíos. Verifica tu conexión y sesión.</p>
+                            <button onclick="loadChallenges()" style="
+                                margin-top: 10px;
+                                padding: 8px 16px;
+                                background: var(--primary-color, #4caf50);
+                                color: white;
+                                border: none;
+                                border-radius: 4px;
+                                cursor: pointer;
+                            "><i class="fas fa-sync-alt"></i> Reintentar</button>
+                        </div>`;
+                    return;
+                }
+                
+                // Filtrar por la consulta si hay datos
+                if (query && desafios.length > 0) {
+                    const queryLower = query.toLowerCase();
+                    const desafiosFiltrados = desafios.filter(d => 
+                        (d.nombre && d.nombre.toLowerCase().includes(queryLower)) || 
+                        (d.descripcion && d.descripcion.toLowerCase().includes(queryLower))
                     );
-                }
-                
-                // Cargar participaciones
-                const participacionesResponse = await fetch(`${API_DESAFIOS_URL}/mis-participaciones`);
-                let participaciones = [];
-                
-                if (participacionesResponse.ok) {
-                    const participacionesData = await participacionesResponse.json();
                     
-                    // Determinar si la respuesta es un objeto paginado o un array directo
-                    if (participacionesData && Array.isArray(participacionesData)) {
-                        participaciones = participacionesData;
-                    } else if (participacionesData && typeof participacionesData === 'object' && Array.isArray(participacionesData.content)) {
-                        participaciones = participacionesData.content;
-                    } else {
-                        console.warn('Formato de respuesta inesperado para participaciones:', participacionesData);
+                    if (desafiosFiltrados.length === 0) {
+                        challengesGrid.innerHTML = `
+                            <div style="text-align: center; padding: 20px;">
+                                <p>No se encontraron desafíos que coincidan con "${query}"</p>
+                                <button onclick="loadChallenges()" style="
+                                    margin-top: 10px;
+                                    padding: 8px 16px;
+                                    background: var(--primary-color, #4caf50);
+                                    color: white;
+                                    border: none;
+                                    border-radius: 4px;
+                                    cursor: pointer;
+                                "><i class="fas fa-undo"></i> Ver todos</button>
+                            </div>`;
+                        return;
                     }
                     
+                    desafios = desafiosFiltrados;
+                }
+                
+                // Intentar cargar participaciones solo si hay datos de desafíos
+                let participaciones = [];
+                if (desafios.length > 0) {
+                    try {
+                        const participacionesResponse = await fetch(`${API_DESAFIOS_URL}/mis-participaciones`, {
+                            headers: {
+                                'X-Requested-With': 'XMLHttpRequest',
+                                'Accept': 'application/json'
+                            },
+                            credentials: 'include'
+                        });
+                        
+                        if (participacionesResponse.ok) {
+                            const partContentType = participacionesResponse.headers.get('content-type');
+                            if (partContentType && partContentType.includes('application/json')) {
+                                const participacionesData = await participacionesResponse.json();
+                                
+                                if (participacionesData && Array.isArray(participacionesData)) {
+                                    participaciones = participacionesData;
+                                } else if (participacionesData && typeof participacionesData === 'object' && Array.isArray(participacionesData.content)) {
+                                    participaciones = participacionesData.content;
+                                }
+                            }
+                        }
+                    } catch (partError) {
+                        console.warn("Error al cargar participaciones:", partError);
+                        // Continuar incluso sin participaciones
+                    }
+                }
+                
+                // Combinar desafíos con participaciones si hay datos
+                if (participaciones.length > 0) {
                     const participacionMap = new Map();
                     participaciones.forEach(p => {
                         if (p && p.desafioId) {
@@ -1488,21 +1648,56 @@
                 // Renderizar resultados
                 challengesGrid.innerHTML = '';
                 if (desafios.length === 0) {
-                    challengesGrid.innerHTML = '<p>No se encontraron desafíos con ese criterio.</p>';
+                    challengesGrid.innerHTML = '<p>No se encontraron desafíos.</p>';
                     return;
                 }
                 
+                // Mostrar los desafíos con animación
                 desafios.forEach((desafio, index) => {
                     setTimeout(() => {
                         renderChallengeCard(desafio);
-                    }, 100 * index);
+                    }, 50 * index);
                 });
                 
+                // Aplicar filtro actual
                 applyFilter();
                 
             } catch (error) {
                 console.error('Error al buscar desafíos:', error);
-                challengesGrid.innerHTML = '<p>Error al realizar la búsqueda. Intente de nuevo.</p>';
+                
+                // Determinar el tipo de error para mostrar mensaje apropiado
+                if (error.message.includes('sesión ha expirado')) {
+                    challengesGrid.innerHTML = `
+                        <div style="text-align: center; padding: 20px;">
+                            <div style="color: #d32f2f; margin-bottom: 15px;">
+                                <i class="fas fa-exclamation-circle" style="font-size: 24px;"></i>
+                                <p style="margin-top: 10px;">${error.message}</p>
+                            </div>
+                            <button onclick="window.location.reload()" style="
+                                margin-top: 10px;
+                                padding: 8px 16px;
+                                background: var(--primary-color, #4caf50);
+                                color: white;
+                                border: none;
+                                border-radius: 4px;
+                                cursor: pointer;
+                            "><i class="fas fa-sync-alt"></i> Recargar página</button>
+                        </div>`;
+                } else {
+                    challengesGrid.innerHTML = `
+                        <div style="text-align: center; padding: 20px;">
+                            <p>Error al realizar la búsqueda: ${error.message}</p>
+                            <button onclick="loadChallenges()" style="
+                                margin-top: 10px;
+                                padding: 8px 16px;
+                                background: var(--primary-color, #4caf50);
+                                color: white;
+                                border: none;
+                                border-radius: 4px;
+                                cursor: pointer;
+                            "><i class="fas fa-sync-alt"></i> Reintentar</button>
+                        </div>`;
+                }
             }
         }
 
@@ -1676,7 +1871,11 @@
                     console.log('Datos de usuario cargados:', userData);
                     
                     // Inicializar array de proyectos en los que participo
-                    if (userData.proyectosParticipados && Array.isArray(userData.proyectosParticipados)) {
+                    if (userData.proyectosParticipadosIds && Array.isArray(userData.proyectosParticipadosIds)) {
+                        currentUserProjects = userData.proyectosParticipadosIds;
+                    }
+                    // Compatibilidad con versiones anteriores que usaban proyectosParticipados
+                    else if (userData.proyectosParticipados && Array.isArray(userData.proyectosParticipados)) {
                         if (userData.proyectosParticipados.length > 0 && typeof userData.proyectosParticipados[0] === 'object') {
                             // Si son objetos, extraer los IDs
                             currentUserProjects = userData.proyectosParticipados.map(p => p.proyectoId || p.id || '');
@@ -1684,11 +1883,6 @@
                             // Si son directamente IDs
                             currentUserProjects = userData.proyectosParticipados;
                         }
-                    }
-                    
-                    // Alternativamente, usar proyectosParticipadosIds si existe
-                    if (userData.proyectosParticipadosIds && Array.isArray(userData.proyectosParticipadosIds)) {
-                        currentUserProjects = userData.proyectosParticipadosIds;
                     }
                     
                     console.log('Proyectos en los que participo (servidor):', currentUserProjects);
@@ -2343,10 +2537,11 @@
     <script>
         // Funciones para modal de detalles de proyecto
         function openProjectDetails(projectId) {
-            // Verificar si existe el modal
-            const modal = document.getElementById('projectDetailModal');
-            if (!modal) {
-                console.warn('No se encontró el modal de detalles del proyecto');
+            // Verificar si el modal existe
+            const detailModal = document.getElementById('projectDetailModal');
+            if (!detailModal) {
+                console.warn('Modal de detalles no encontrado. No se puede abrir.');
+                showNotification('info', 'Vista de detalles no disponible');
                 return;
             }
             
@@ -2358,9 +2553,11 @@
             
             if (!titleElement || !descriptionElement || !participantsListElement || !challengesListElement) {
                 console.warn('Faltan elementos en el modal de detalles del proyecto');
+                showNotification('info', 'Vista de detalles no disponible');
                 return;
             }
             
+            // Si todo existe, continuar con la lógica normal
             // Limpiar datos anteriores
             titleElement.textContent = 'Cargando...';
             descriptionElement.textContent = 'Cargando información del proyecto...';
@@ -2368,7 +2565,7 @@
             challengesListElement.innerHTML = '<p class="loading-message">Cargando desafíos...</p>';
             
             // Mostrar modal
-            modal.style.display = 'flex';
+            detailModal.style.display = 'flex';
             
             // Restablecer la visibilidad del formulario de edición (ocultarlo)
             const editForm = document.getElementById('edit-project-form');
@@ -2796,5 +2993,6 @@
             return currentUserProjects.includes(projectId);
         }
     </script>
+    <script th:src="@{/js/menu.js}" defer></script>
 </body>
 </html>

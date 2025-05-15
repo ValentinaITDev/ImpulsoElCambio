@@ -11,10 +11,13 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.UUID;
+import java.time.LocalDateTime;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.env.Environment;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -31,6 +34,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.Impulso.Alcambio.Modelo.Proyecto;
 import com.Impulso.Alcambio.Modelo.Usuario;
@@ -48,6 +53,8 @@ import com.Impulso.Alcambio.Servicio.ForoServicio;
 @RequestMapping("/api/proyectos")
 // @PreAuthorize("hasAuthority('ADMIN')") // Comentado para permitir a usuarios autenticados ver proyectos
 public class ProyectoController {
+    
+    private static final Logger logger = LoggerFactory.getLogger(ProyectoController.class);
     
     @Autowired
     private ProyectoServicio proyectoServicio;
@@ -518,6 +525,24 @@ public class ProyectoController {
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(Map.of("error", "Error al obtener estadísticas: " + e.getMessage()));
+        }
+    }
+
+    @GetMapping("/admin/verificar-expirados")
+    @PreAuthorize("hasAuthority('ADMIN')")
+    public ResponseEntity<?> verificarProyectosExpirados() {
+        try {
+            int proyectosActualizados = proyectoServicio.verificarProyectosExpirados();
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("mensaje", String.format("Verificación completada. %d proyectos actualizados a estado COMPLETADO", proyectosActualizados));
+            response.put("proyectosActualizados", proyectosActualizados);
+            
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            logger.error("Error al verificar proyectos con fecha cumplida", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body("Error al verificar proyectos con fecha cumplida: " + e.getMessage());
         }
     }
 } 
